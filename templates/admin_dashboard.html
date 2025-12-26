@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SafeSchool Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 0.2em; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f2f2f2; text-align: left; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; background: #eef; margin-right: 4px; }
+    .error { color: #b00020; }
+    .notice { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; margin: 8px 0; background: #f9f9f9; }
+    form.inline { display: inline; }
+    .status { margin-bottom: 16px; padding: 12px; border-radius: 8px; background: #f7fafe; border: 1px solid #cddfee; }
+  </style>
+</head>
+<body>
+  <h1>Parent Bindings Dashboard</h1>
+  <p class="notice">Data sources: parents.json (bindings), pending_tokens.json (one-time tokens), links.csv (deep links).</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div>
+        {% for category, msg in messages %}
+          <div class="notice {% if category == 'error' %}error{% endif %}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="status">
+    <strong>Bot configuration</strong><br>
+    <div>BOT_USERNAME: {{ bot_status.username if bot_status.username else "not set" }}</div>
+    <div>TELEGRAM_BOT_TOKEN: {{ "configured" if bot_status.token_set else "not set" }}</div>
+    <div>Deep-link format: <code>{{ bot_status.deep_link_format }}</code></div>
+    {% if bot_status.errors %}
+      <div class="error">
+        {% for err in bot_status.errors %}
+          <div>{{ err }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <h2>Students</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Student ID</th>
+        <th>Bound chats</th>
+        <th>Current link</th>
+        <th>Pending tokens</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in student_rows %}
+        <tr>
+          <td>{{ row.student_id }}</td>
+          <td>
+            {% if row.chats %}
+              {% for chat in row.chats %}
+                <span class="pill">{{ chat }}</span>
+                <form class="inline" method="post" action="{{ url_for('unbind_chat') }}">
+                  <input type="hidden" name="student_id" value="{{ row.student_id }}">
+                  <input type="hidden" name="chat_id" value="{{ chat }}">
+                  <button type="submit">Unbind</button>
+                </form>
+                <br>
+              {% endfor %}
+            {% else %}
+              <em>No chats</em>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.link %}
+              <a href="{{ row.link }}" target="_blank">{{ row.link }}</a>
+            {% else %}
+              <em>—</em>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.tokens %}
+              {% for tok in row.tokens %}
+                <div class="pill">{{ tok }}</div>
+              {% endfor %}
+            {% else %}
+              <em>—</em>
+            {% endif %}
+          </td>
+          <td>
+            <form class="inline" method="post" action="{{ url_for('regenerate_link') }}">
+              <input type="hidden" name="student_id" value="{{ row.student_id }}">
+              <button type="submit">Regenerate link</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Pending tokens</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Student ID</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for token, sid in token_rows %}
+        <tr>
+          <td>{{ token }}</td>
+          <td>{{ sid }}</td>
+          <td>
+            <form class="inline" method="post" action="{{ url_for('revoke_token') }}">
+              <input type="hidden" name="token" value="{{ token }}">
+              <button type="submit">Revoke</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="3"><em>No pending tokens.</em></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

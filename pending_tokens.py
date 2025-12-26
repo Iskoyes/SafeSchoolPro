@@ -6,6 +6,12 @@ import string
 from pathlib import Path
 from dotenv import load_dotenv
 
+from storage_utils import (
+    load_json_locked,
+    locked_open,
+    write_json_locked,
+)
+
 # load .env from cwd, fallback to safeschool-recognition/.env
 load_dotenv()
 if not os.getenv("BOT_USERNAME"):
@@ -24,30 +30,31 @@ def gen_token(prefix="bind", n=8):
     return f"{prefix}-" + "".join(secrets.choice(alphabet) for _ in range(n))
 
 def load_pending():
-    if PENDING_F.exists():
-        try:
-            return json.loads(PENDING_F.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+    data = load_json_locked(PENDING_F, default={})
+    if isinstance(data, dict):
+        return data
     return {}
 
 def save_pending(d: dict):
-    PENDING_F.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_locked(PENDING_F, d)
 
 def load_links():
     links = {}
     if LINKS_F.exists():
         try:
-            with LINKS_F.open("r", encoding="utf-8", newline="") as f:
+            with locked_open(LINKS_F, "r", shared=True, newline="") as f:
                 rdr = csv.DictReader(f)
                 for r in rdr:
-                    links[r["student_id"]] = r["deep_link"]
+                    sid = (r.get("student_id") or "").strip()
+                    link = (r.get("deep_link") or "").strip()
+                    if sid:
+                        links[sid] = link
         except Exception:
             pass
     return links
 
 def save_links(links: dict):
-    with LINKS_F.open("w", encoding="utf-8", newline="") as f:
+    with locked_open(LINKS_F, "w", shared=False, newline="") as f:
         w = csv.writer(f)
         w.writerow(["student_id", "deep_link"])
         for sid, link in links.items():
@@ -66,11 +73,16 @@ def _make_qr_image(link: str, out_path: Path):
         # qrcode not available — skip QR creation
         return False
 
-def create_bind_link_for_student(student_id: str, bot_username: str = None, reuse=True):
+def create_bind_link_for_student(
+    student_id: str, bot_username: str = None, reuse: bool = True, replace_existing: bool = False
+):
     """
     Create one-time bind token for student_id, save pending_tokens.json and links.csv,
     write QR image to qr_links/<student_id>.png if qrcode is installed.
     Returns dict: {"token": token, "link": link, "qr": qr_path or None}
+
+    reuse=True will keep an existing pending token for the student.
+    replace_existing=True will drop other pending tokens for the student once a new one is created.
     """
     if not bot_username:
         bot_username = os.getenv("BOT_USERNAME")
@@ -83,6 +95,11 @@ def create_bind_link_for_student(student_id: str, bot_username: str = None, reus
     existing = next((t for t, s in pending.items() if s == student_id), None) if reuse else None
     token = existing or gen_token()
     pending[token] = student_id
+
+    if replace_existing:
+        to_drop = [t for t, s in pending.items() if s == student_id and t != token]
+        for t in to_drop:
+            pending.pop(t, None)
     save_pending(pending)
 
     links = load_links()
