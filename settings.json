@@ -1,0 +1,14 @@
+{
+  "camera_source": "",
+  "process_every_n": 2,
+  "sim_threshold": 0.38,
+  "process_scale": 0.6,
+  "detection_size": [
+    320,
+    320
+  ],
+  "desired_resolution": [
+    1280,
+    720
+  ]
+}
